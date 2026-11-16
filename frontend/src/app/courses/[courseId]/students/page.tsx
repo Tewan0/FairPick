@@ -1,18 +1,44 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
-import { getCourse, listCourseStudents, bulkEnrollCourseStudents, withdrawStudentFromCourse, importCourseStudentsFile } from "@/lib/api";
-import { CourseDetail, EnrolledStudent } from "@/types/fairpick";
+import { useEffect, useState, useMemo, useRef, use } from "react";
+import {
+  getCourse,
+  listCourseStudents,
+  enrollStudentInCourse,
+  bulkEnrollCourseStudents,
+  withdrawStudentFromCourse,
+  importCourseStudentsFile,
+} from "@/lib/api";
+import { CourseDetail, EnrolledStudent, EnrollmentFilterStatus } from "@/types/fairpick";
 import { CourseNav } from "@/components/CourseNav";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Users, UserPlus, Upload, Trash2, AlertCircle } from "lucide-react";
+import {
+  Users,
+  UserPlus,
+  Upload,
+  Trash2,
+  AlertCircle,
+  Search,
+  CheckCircle2,
+  FileSpreadsheet,
+  RotateCcw,
+} from "lucide-react";
 
 export default function CourseStudentsPage({ params }: { params: Promise<{ courseId: string }> }) {
   const resolvedParams = use(params);
@@ -22,44 +48,120 @@ export default function CourseStudentsPage({ params }: { params: Promise<{ cours
   const [students, setStudents] = useState<EnrolledStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Quick add / paste modal
+  // Filter & Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<EnrollmentFilterStatus>("active");
+
+  // Single add modal
+  const [singleModalOpen, setSingleModalOpen] = useState(false);
+  const [singleCode, setSingleCode] = useState("");
+  const [singleName, setSingleName] = useState("");
+  const [addingSingle, setAddingSingle] = useState(false);
+
+  // Bulk paste modal
   const [pasteModalOpen, setPasteModalOpen] = useState(false);
   const [rawStudentText, setRawStudentText] = useState("");
   const [pasting, setPasting] = useState(false);
 
-  // File import
+  // File import + confirmation dialog
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileConfirmOpen, setFileConfirmOpen] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
 
-  const fetchData = async () => {
+  // Withdraw student confirmation dialog
+  const [studentToWithdraw, setStudentToWithdraw] = useState<EnrolledStudent | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  const fetchData = async (currentStatus: EnrollmentFilterStatus = statusFilter) => {
+    if (!Number.isInteger(courseId) || courseId <= 0) {
+      setError("รหัสรายวิชาไม่ถูกต้อง");
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
       const [cRes, sRes] = await Promise.all([
         getCourse(courseId),
-        listCourseStudents(courseId, { limit: 100 }),
+        listCourseStudents(courseId, { status: currentStatus, limit: 500 }),
       ]);
       setCourse(cRes.data);
       setStudents(sRes.data || []);
-    } catch (err: any) {
-      setError(err?.message || "ไม่สามารถดึงข้อมูลนักศึกษาได้");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setError(msg || "ไม่สามารถดึงข้อมูลนักศึกษาได้");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [courseId]);
+    fetchData(statusFilter);
+  }, [courseId, statusFilter]);
 
-  const handleWithdraw = async (studentId: number, name: string) => {
-    if (!confirm(`ต้องการนำนักศึกษา "${name}" ออกจากรายวิชานี้หรือไม่?`)) return;
+  const filteredStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(
+      (s) =>
+        s.studentCode.toLowerCase().includes(q) ||
+        s.fullName.toLowerCase().includes(q)
+    );
+  }, [students, searchQuery]);
+
+  const handleSingleEnroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!singleCode.trim() || !singleName.trim()) return;
     try {
-      await withdrawStudentFromCourse(courseId, studentId);
-      fetchData();
-    } catch (err: any) {
-      alert("ถอนนักศึกษาไม่สำเร็จ: " + (err?.message || ""));
+      setAddingSingle(true);
+      await enrollStudentInCourse(courseId, {
+        studentCode: singleCode.trim(),
+        fullName: singleName.trim(),
+      });
+      setSingleModalOpen(false);
+      setSingleCode("");
+      setSingleName("");
+      setFeedback({ type: "success", message: `เพิ่มนักศึกษา "${singleCode.trim()} ${singleName.trim()}" สำเร็จ` });
+      await fetchData(statusFilter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setFeedback({ type: "error", message: "เพิ่มนักศึกษาไม่สำเร็จ: " + msg });
+    } finally {
+      setAddingSingle(false);
+    }
+  };
+
+  const handleReEnroll = async (student: EnrolledStudent) => {
+    try {
+      await enrollStudentInCourse(courseId, { studentId: student.studentId });
+      setFeedback({ type: "success", message: `คืนสถานะการลงทะเบียนของ "${student.fullName}" สำเร็จ` });
+      await fetchData(statusFilter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setFeedback({ type: "error", message: "คืนสถานะไม่สำเร็จ: " + msg });
+    }
+  };
+
+  const handleConfirmWithdraw = async () => {
+    if (!studentToWithdraw) return;
+    try {
+      setWithdrawing(true);
+      const res = await withdrawStudentFromCourse(courseId, studentToWithdraw.studentId);
+      setFeedback({
+        type: "success",
+        message: res.message || `นำนักศึกษา "${studentToWithdraw.fullName}" ออกจากรายวิชาสำเร็จ`,
+      });
+      setStudentToWithdraw(null);
+      await fetchData(statusFilter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setFeedback({ type: "error", message: "ถอนนักศึกษาไม่สำเร็จ: " + msg });
+      setStudentToWithdraw(null);
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -67,45 +169,55 @@ export default function CourseStudentsPage({ params }: { params: Promise<{ cours
     e.preventDefault();
     if (!rawStudentText.trim()) return;
 
-    // Parse lines: studentCode fullName
-    const lines = rawStudentText.split("\n").filter((l) => l.trim().length > 0);
-    const parsedStudents = lines.map((line) => {
-      const parts = line.split(/[,\t ]+/).map((p) => p.trim()).filter(Boolean);
-      return {
-        studentCode: parts[0] || "",
-        fullName: parts.slice(1).join(" ") || "นักศึกษา",
-      };
-    }).filter((s) => s.studentCode);
-
-    if (parsedStudents.length === 0) {
-      alert("ไม่พบรูปแบบข้อมูลนักศึกษาที่ถูกต้อง");
-      return;
-    }
-
     try {
       setPasting(true);
-      await bulkEnrollCourseStudents(courseId, { students: parsedStudents });
+      const res = await bulkEnrollCourseStudents(courseId, { rawText: rawStudentText });
+      const sum = res.data.summary;
+      const addedTotal =
+        sum.newlyCreatedAndEnrolled + sum.existingStudentEnrolled + sum.reactivatedEnrollment;
       setPasteModalOpen(false);
       setRawStudentText("");
-      fetchData();
-    } catch (err: any) {
-      alert("เพิ่มนักศึกษาไม่สำเร็จ: " + (err?.message || ""));
+      setFeedback({
+        type: "success",
+        message: `นำเข้ารายชื่อสำเร็จ: เพิ่มเข้าวิชา ${addedTotal} คน (ข้ามที่ซ้ำ ${sum.alreadyEnrolledSkipped} คน, แถวไม่สมบูรณ์ ${sum.invalidRowsSkipped} แถว)`,
+      });
+      await fetchData(statusFilter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setFeedback({ type: "error", message: "เพิ่มนักศึกษาไม่สำเร็จ: " + msg });
     } finally {
       setPasting(false);
     }
   };
 
-  const handleFileUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedFile) return;
+  const handleSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (file) {
+      setSelectedFile(file);
+      setFileConfirmOpen(true);
+    }
+  };
 
+  const handleConfirmFileUpload = async () => {
+    if (!selectedFile) return;
     try {
       setImportingFile(true);
-      await importCourseStudentsFile(courseId, selectedFile);
+      const res = await importCourseStudentsFile(courseId, selectedFile);
+      const sum = res.data.summary;
+      const addedTotal =
+        sum.newlyCreatedAndEnrolled + sum.existingStudentEnrolled + sum.reactivatedEnrollment;
+      setFileConfirmOpen(false);
       setSelectedFile(null);
-      fetchData();
-    } catch (err: any) {
-      alert("อัปโหลดไฟล์ไม่สำเร็จ: " + (err?.message || ""));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFeedback({
+        type: "success",
+        message: `อัปโหลดไฟล์สำเร็จ: เพิ่มเข้าวิชา ${addedTotal} คน จากทั้งหมด ${sum.totalRowsRead} แถว (ข้ามซ้ำ ${sum.alreadyEnrolledSkipped} คน)`,
+      });
+      await fetchData(statusFilter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "";
+      setFeedback({ type: "error", message: "อัปโหลดไฟล์ไม่สำเร็จ: " + msg });
+      setFileConfirmOpen(false);
     } finally {
       setImportingFile(false);
     }
@@ -117,41 +229,98 @@ export default function CourseStudentsPage({ params }: { params: Promise<{ cours
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex flex-wrap items-center gap-2">
             <span>รายชื่อนักศึกษา</span>
             {course && (
-              <Badge variant="outline" className="text-sm font-normal">
-                {course.courseCode} - {course.courseName}
+              <Badge variant="outline" className="text-xs font-mono">
+                {course.courseCode || "NO-CODE"} • {course.courseName}
               </Badge>
             )}
           </h1>
           <p className="text-muted-foreground text-sm">
-            จัดการนักศึกษาที่ลงทะเบียนในรายวิชานี้ (ทั้งหมด {students.length} คน)
+            จัดการนักศึกษาที่ลงทะเบียนในรายวิชานี้ (กำลังศึกษา {course?.enrolledCount || 0} คน)
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Single Student Add Dialog */}
+          <Dialog open={singleModalOpen} onOpenChange={setSingleModalOpen}>
+            <DialogTrigger render={<Button variant="outline" size="sm" className="gap-1.5" />}>
+              <UserPlus className="size-4" /> เพิ่มรายบุคคล
+            </DialogTrigger>
+            <DialogContent>
+              <form onSubmit={handleSingleEnroll}>
+                <DialogHeader>
+                  <DialogTitle>เพิ่มนักศึกษาเข้าสู่รายวิชา</DialogTitle>
+                  <DialogDescription>
+                    กรอกรหัสนักศึกษาและชื่อ-นามสกุลเพื่อลงทะเบียนเข้าสู่วิชานี้ทันที
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="single_code">รหัสนักศึกษา</Label>
+                    <Input
+                      id="single_code"
+                      placeholder="เช่น 660510001"
+                      value={singleCode}
+                      maxLength={30}
+                      onChange={(e) => setSingleCode(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="single_name">ชื่อ - นามสกุล</Label>
+                    <Input
+                      id="single_name"
+                      placeholder="เช่น สมชาย ใจดี"
+                      value={singleName}
+                      maxLength={255}
+                      onChange={(e) => setSingleName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setSingleModalOpen(false)}>
+                    ยกเลิก
+                  </Button>
+                  <Button type="submit" disabled={addingSingle}>
+                    {addingSingle ? "กำลังบันทึก..." : "ยืนยันเพิ่มนักศึกษา"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Bulk Paste Dialog */}
           <Dialog open={pasteModalOpen} onOpenChange={setPasteModalOpen}>
             <DialogTrigger render={<Button className="gap-1.5" size="sm" />}>
-              <UserPlus className="size-4" /> เพิ่ม / วางรายชื่อ (Paste)
+              <Users className="size-4" /> วางรายชื่อแบบกลุ่ม (Paste)
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <form onSubmit={handleBulkPaste}>
                 <DialogHeader>
                   <DialogTitle>วางรายชื่อนักศึกษา (Bulk Paste)</DialogTitle>
                   <DialogDescription>
-                    วางข้อมูลนักศึกษาทีละบรรทัด รูปแบบ: <code>รหัสนักศึกษา ชื่อ นามสกุล</code> (คั่นด้วยวรรค หรือ Tab)
+                    วางข้อมูลนักศึกษาทีละบรรทัด รูปแบบ: <code>รหัสนักศึกษา ชื่อ นามสกุล</code> (คั่นด้วยวรรค, คอมมา หรือ Tab จาก Excel)
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="py-4">
+                <div className="py-4 space-y-2">
                   <Textarea
-                    placeholder="65010001 สมชาย ใจดี&#10;65010002 สมหญิง รักเรียน"
+                    placeholder={"660510001 สมชาย ใจดี\n660510002 สมหญิง รักเรียน"}
                     rows={8}
                     value={rawStudentText}
                     onChange={(e) => setRawStudentText(e.target.value)}
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    พบข้อมูลพร้อมนำเข้า{" "}
+                    <span className="font-semibold text-foreground">
+                      {rawStudentText.split("\n").filter((l) => l.trim().length > 0).length}
+                    </span>{" "}
+                    บรรทัด
+                  </p>
                 </div>
 
                 <DialogFooter>
@@ -159,27 +328,156 @@ export default function CourseStudentsPage({ params }: { params: Promise<{ cours
                     ยกเลิก
                   </Button>
                   <Button type="submit" disabled={pasting}>
-                    {pasting ? "กำลังบันทึก..." : "นำเข้ารายชื่อ"}
+                    {pasting ? "กำลังนำเข้า..." : "ยืนยันนำเข้ารายชื่อ"}
                   </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
 
-          <form onSubmit={handleFileUpload} className="flex items-center gap-2">
-            <Input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="max-w-[200px] h-9 text-xs"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-            />
-            <Button type="submit" variant="outline" size="sm" disabled={!selectedFile || importingFile} className="gap-1">
-              <Upload className="size-3.5" />
-              {importingFile ? "กำลังส่ง..." : "Import"}
-            </Button>
-          </form>
+          {/* File Upload Trigger */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.xlsx"
+            className="hidden"
+            onChange={handleSelectFile}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="size-3.5" /> นำเข้าไฟล์ (.csv / .xlsx)
+          </Button>
         </div>
       </div>
+
+      {/* Confirmation Dialog: File Import */}
+      <Dialog
+        open={fileConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFileConfirmOpen(false);
+            setSelectedFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="size-5 text-emerald-600" /> ยืนยันการนำเข้าไฟล์รายชื่อนักศึกษา
+            </DialogTitle>
+            <DialogDescription>
+              ตรวจสอบรายละเอียดไฟล์ก่อนนำเข้ารายชื่อนักศึกษาเข้าสู่รายวิชานี้
+            </DialogDescription>
+          </DialogHeader>
+          {selectedFile && (
+            <div className="py-3 px-4 rounded-lg border bg-muted/40 space-y-1 text-sm">
+              <div className="font-medium text-foreground">{selectedFile.name}</div>
+              <div className="text-xs text-muted-foreground">
+                ขนาดไฟล์: {(selectedFile.size / 1024).toFixed(1)} KB • ระบบจะข้ามรหัสนักศึกษาที่ลงทะเบียนอยู่ในวิชานี้แล้วโดยอัตโนมัติ
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={importingFile}
+              onClick={() => {
+                setFileConfirmOpen(false);
+                setSelectedFile(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+            >
+              ยกเลิก
+            </Button>
+            <Button type="button" onClick={handleConfirmFileUpload} disabled={importingFile}>
+              {importingFile ? "กำลังอัปโหลด..." : "ยืนยันนำเข้าไฟล์"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog: Withdraw Student */}
+      <Dialog open={!!studentToWithdraw} onOpenChange={(open) => !open && setStudentToWithdraw(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="size-5" /> ยืนยันการถอนนักศึกษาออกจากรายวิชา
+            </DialogTitle>
+            <DialogDescription>
+              คุณต้องการนำนักศึกษา{" "}
+              <span className="font-semibold text-foreground">
+                {studentToWithdraw?.studentCode} — {studentToWithdraw?.fullName}
+              </span>{" "}
+              ออกจากรายวิชานี้ใช่หรือไม่?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg border space-y-1">
+            <p>• หากนักศึกษามีประวัติการเช็กชื่อหรือประวัติการถูกสุ่มแล้ว ระบบจะปรับสถานะเป็น "ถอนรายวิชา (Withdrawn)" เพื่อเก็บรักษาประวัติย้อนหลังไว้</p>
+            <p>• นักศึกษาที่ถอนรายวิชาจะไม่ถูกนำมาคิดในวงล้อสุ่มของคาบเรียนถัดไป</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setStudentToWithdraw(null)} disabled={withdrawing}>
+              ยกเลิก
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleConfirmWithdraw} disabled={withdrawing}>
+              {withdrawing ? "กำลังดำเนินการ..." : "ยืนยันการถอนนักศึกษา"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Search & Status Filter Bar */}
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+        <div className="relative max-w-sm w-full">
+          <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="ค้นหารหัสนักศึกษา หรือ ชื่อ-นามสกุล..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {(
+            [
+              { key: "active", label: "กำลังศึกษา (Active)" },
+              { key: "withdrawn", label: "ถอนแล้ว (Withdrawn)" },
+              { key: "all", label: "ทั้งหมด" },
+            ] as const
+          ).map((tab) => (
+            <Button
+              key={tab.key}
+              type="button"
+              size="sm"
+              variant={statusFilter === tab.key ? "default" : "outline"}
+              className="h-8 text-xs px-3"
+              onClick={() => setStatusFilter(tab.key)}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {feedback && (
+        <Alert variant={feedback.type === "error" ? "destructive" : "default"} className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {feedback.type === "error" ? <AlertCircle className="size-4" /> : <CheckCircle2 className="size-4 text-emerald-600" />}
+            <AlertDescription>{feedback.message}</AlertDescription>
+          </div>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setFeedback(null)}>
+            ปิด
+          </Button>
+        </Alert>
+      )}
 
       {error && (
         <Alert variant="destructive">
@@ -193,44 +491,62 @@ export default function CourseStudentsPage({ params }: { params: Promise<{ cours
         <CardContent className="p-0">
           {loading ? (
             <div className="text-center py-12 text-muted-foreground">กำลังโหลดรายชื่อนักศึกษา...</div>
-          ) : students.length === 0 ? (
+          ) : filteredStudents.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground space-y-2">
               <Users className="size-10 mx-auto opacity-40" />
-              <p>ยังไม่มีนักศึกษาลงทะเบียนในรายวิชานี้</p>
-              <p className="text-xs">คลิก "เพิ่ม / วางรายชื่อ (Paste)" เพื่อเพิ่มนักศึกษาเข้าสู่ระบบ</p>
+              <p>ไม่พบรายชื่อนักศึกษาตามเงื่อนไขที่เลือก</p>
+              <p className="text-xs">คลิก "วางรายชื่อแบบกลุ่ม (Paste)" หรือ "นำเข้าไฟล์ (.csv / .xlsx)" เพื่อเพิ่มนักศึกษาเข้าสู่ระบบ</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[120px]">ลำดับที่</TableHead>
+                  <TableHead className="w-[100px]">ลำดับที่</TableHead>
                   <TableHead className="w-[180px]">รหัสนักศึกษา</TableHead>
                   <TableHead>ชื่อ - นามสกุล</TableHead>
-                  <TableHead className="text-center w-[120px]">สถานะ</TableHead>
-                  <TableHead className="text-right w-[100px]">จัดการ</TableHead>
+                  <TableHead className="text-center w-[140px]">สถานะ</TableHead>
+                  <TableHead className="text-right w-[120px]">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {students.map((item, idx) => (
+                {filteredStudents.map((item, idx) => (
                   <TableRow key={item.studentId || idx}>
                     <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
                     <TableCell className="font-mono font-medium">{item.studentCode}</TableCell>
                     <TableCell>{item.fullName}</TableCell>
                     <TableCell className="text-center">
-                      <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
-                        {item.status || "active"}
-                      </Badge>
+                      {item.status === "withdrawn" ? (
+                        <Badge variant="outline" className="text-rose-600 border-rose-200 bg-rose-50 dark:bg-rose-950/20">
+                          ถอนรายวิชาแล้ว
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
+                          กำลังศึกษา
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-destructive size-8"
-                        onClick={() => handleWithdraw(item.studentId, item.fullName)}
-                        title="ถอนนักศึกษา"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      {item.status === "withdrawn" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2.5 text-xs gap-1"
+                          onClick={() => handleReEnroll(item)}
+                          title="ลงทะเบียนกลับเข้าวิชา"
+                        >
+                          <RotateCcw className="size-3" /> คืนสถานะ
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive size-8"
+                          onClick={() => setStudentToWithdraw(item)}
+                          title="ถอนนักศึกษาออกจากวิชา"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

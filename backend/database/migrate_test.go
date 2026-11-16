@@ -214,14 +214,14 @@ func TestDatabaseConstraintsAndRelationships(t *testing.T) {
 		return tx.Create(&invalid).Error
 	}, "course with neither course_code nor course_name")
 
-	// Course with invalid course_code format (not 6 digits) -> must fail chk_courses_code_format
+	// Course with invalid course_code format (>10 chars or special chars) -> must fail chk_courses_code_format
 	assertExecFails(t, tx, "sp_bad_course_code", func(tx *gorm.DB) error {
 		invalid := models.Course{
-			CourseCode: strPtr("12345"),
+			CourseCode: strPtr("CS101-INVALID"),
 			CourseName: strPtr("Invalid Code Course"),
 		}
 		return tx.Create(&invalid).Error
-	}, "course with 5-digit course_code")
+	}, "course with invalid non-alphanumeric / >10-char course_code")
 
 	// Course with blank string "" -> must fail chk_courses_no_blank_strings
 	assertExecFails(t, tx, "sp_blank_course_str", func(tx *gorm.DB) error {

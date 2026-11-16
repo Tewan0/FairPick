@@ -173,6 +173,8 @@ type xlsxCell struct {
 	} `xml:"is"`
 }
 
+const maxDecompressedXMLBytes = 15 * 1024 * 1024 // 15 MB max decompressed XML per entry to prevent Zip Bomb DoS
+
 func readSharedStrings(f *zip.File) ([]string, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -181,7 +183,7 @@ func readSharedStrings(f *zip.File) ([]string, error) {
 	defer rc.Close()
 
 	var sst xlsxSST
-	if err := xml.NewDecoder(rc).Decode(&sst); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(rc, maxDecompressedXMLBytes)).Decode(&sst); err != nil {
 		return nil, err
 	}
 
@@ -208,7 +210,7 @@ func readWorksheetRows(f *zip.File, sharedStrings []string) ([][]string, error) 
 	defer rc.Close()
 
 	var ws xlsxWorksheet
-	if err := xml.NewDecoder(rc).Decode(&ws); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(rc, maxDecompressedXMLBytes)).Decode(&ws); err != nil {
 		return nil, err
 	}
 
@@ -425,11 +427,17 @@ func validateStudentPair(studentCode, fullName string) string {
 	if len(studentCode) > 30 {
 		return "รหัสนักศึกษายาวเกิน 30 ตัวอักษร"
 	}
+	if strings.HasPrefix(studentCode, "=") || strings.HasPrefix(studentCode, "+") || strings.HasPrefix(studentCode, "@") {
+		return "รหัสนักศึกษามีอักขระขึ้นต้นที่ไม่อนุญาต"
+	}
 	if fullName == "" {
 		return "ไม่พบชื่อ-นามสกุล"
 	}
 	if len(fullName) > 255 {
 		return "ชื่อ-นามสกุลยาวเกิน 255 ตัวอักษร"
+	}
+	if strings.HasPrefix(fullName, "=") || strings.HasPrefix(fullName, "+") || strings.HasPrefix(fullName, "@") {
+		return "ชื่อ-นามสกุลมีอักขระขึ้นต้นที่ไม่อนุญาต"
 	}
 	return ""
 }

@@ -29,6 +29,13 @@ func Setup(app *fiber.App, cfg *config.Config) {
 }
 
 func SetupWithDB(app *fiber.App, cfg *config.Config, db *gorm.DB) {
+	// Set standard HTTP security headers per GO-HTTP-004
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		return c.Next()
+	})
 	app.Use(cors.New(NewCORSConfig(cfg)))
 	api := app.Group("/api")
 

@@ -149,7 +149,7 @@ func (h *AttendanceHandler) GetSessionAttendance(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		query = query.Where("(students.student_code ILIKE ? OR students.full_name ILIKE ?)", like, like)
 	}
 

@@ -4,7 +4,7 @@ import "time"
 
 type Course struct {
 	ID         uint64    `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	CourseCode *string   `gorm:"column:course_code;type:varchar(6)" json:"courseCode"`
+	CourseCode *string   `gorm:"column:course_code;type:varchar(10)" json:"courseCode"`
 	CourseName *string   `gorm:"column:course_name;type:varchar(255)" json:"courseName"`
 	Section    *string   `gorm:"column:section;type:varchar(50)" json:"section"`
 	Semester   *string   `gorm:"column:semester;type:varchar(50)" json:"semester"`

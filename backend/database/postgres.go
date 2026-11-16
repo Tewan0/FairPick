@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"log"
+	"os"
 	"time"
 
 	"github.com/Tewan0/FairPick/config"
@@ -13,8 +15,18 @@ import (
 var DB *gorm.DB
 
 func Connect(cfg *config.Config) (*gorm.DB, error) {
+	gormLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             2 * time.Second,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
+
 	db, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
-		Logger:                                   logger.Default.LogMode(logger.Warn),
+		Logger:                                   gormLogger,
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {

@@ -113,7 +113,7 @@ func (h *EnrollmentHandler) ListCourseStudents(c *fiber.Ctx) error {
 		query = query.Where("enrollments.status = ?", statusFilter)
 	}
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		query = query.Where("students.student_code ILIKE ? OR students.full_name ILIKE ?", like, like)
 	}
 
@@ -431,15 +431,27 @@ func (h *EnrollmentHandler) ImportStudentsFile(c *fiber.Ctx) error {
 		})
 	}
 
+	const maxUploadSize = 5 * 1024 * 1024 // 5 MB max upload size per GO-UPLOAD-001 / GO-HTTP-002
+	if fileHeader.Size > maxUploadSize {
+		return response.ValidationError(c, "ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 5 MB)", map[string]string{
+			"file": "ขนาดไฟล์ต้องไม่เกิน 5 MB",
+		})
+	}
+
 	f, err := fileHeader.Open()
 	if err != nil {
 		return response.InvalidRequest(c, "ไม่สามารถเปิดไฟล์ที่อัปโหลดได้")
 	}
 	defer f.Close()
 
-	content, err := io.ReadAll(f)
+	content, err := io.ReadAll(io.LimitReader(f, maxUploadSize+1))
 	if err != nil {
 		return response.InvalidRequest(c, "ไม่สามารถอ่านเนื้อหาไฟล์ที่อัปโหลดได้")
+	}
+	if len(content) > maxUploadSize {
+		return response.ValidationError(c, "ไฟล์มีขนาดใหญ่เกินไป (จำกัดไม่เกิน 5 MB)", map[string]string{
+			"file": "ขนาดไฟล์ต้องไม่เกิน 5 MB",
+		})
 	}
 
 	parsed, err := importer.ParseUploadedFile(fileHeader.Filename, content)

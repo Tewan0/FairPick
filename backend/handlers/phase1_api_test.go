@@ -160,13 +160,13 @@ func TestCoursesCRUDAndValidations(t *testing.T) {
 		t.Fatalf("expected VALIDATION_ERROR, got %v", errObj["code"])
 	}
 
-	// 4. Validation error: invalid courseCode (not 6 digits)
+	// 4. Validation error: invalid courseCode (> 10 chars or non-alphanumeric)
 	status, res = doJSONRequest(t, app, http.MethodPost, "/api/courses", map[string]interface{}{
-		"courseCode": "12345",
+		"courseCode": "CS101234567",
 		"courseName": "Bad Code",
 	})
 	if status != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for 5-digit courseCode, got %d: %v", status, res)
+		t.Fatalf("expected 400 Bad Request for >10-char courseCode, got %d: %v", status, res)
 	}
 
 	// 5. Duplicate course: same (courseCode, section, semester) even with different courseName -> 409 DUPLICATE_RESOURCE

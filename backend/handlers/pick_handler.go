@@ -927,7 +927,7 @@ func (h *PickHandler) ListCoursePicks(c *fiber.Ctx) error {
 		baseQuery = baseQuery.Where("pick_history.status = ?", statusFilter)
 	}
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		baseQuery = baseQuery.Where("(students.student_code ILIKE ? OR students.full_name ILIKE ?)", like, like)
 	}
 

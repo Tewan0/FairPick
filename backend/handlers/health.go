@@ -43,9 +43,6 @@ func (h *HealthHandler) CheckDB(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":   "healthy",
 		"database": "connected",
-		"db_name":  h.cfg.DBName,
-		"host":     h.cfg.DBHost,
-		"port":     h.cfg.DBPort,
 	})
 }
 

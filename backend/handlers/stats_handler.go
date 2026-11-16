@@ -377,7 +377,7 @@ func (h *StatsHandler) ListCourseStudentStats(c *fiber.Ctx) error {
 		enrQuery = enrQuery.Where("enrollments.status = ?", enrollmentStatus)
 	}
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		enrQuery = enrQuery.Where("(students.student_code ILIKE ? OR students.full_name ILIKE ?)", like, like)
 	}
 

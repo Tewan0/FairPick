@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Tewan0/FairPick/config"
 	"github.com/Tewan0/FairPick/database"
@@ -30,8 +31,8 @@ func main() {
 	} else {
 		log.Printf("Connected to PostgreSQL database '%s' at %s:%s", cfg.DBName, cfg.DBHost, cfg.DBPort)
 
-		autoMigrateEnv := strings.EqualFold(os.Getenv("AUTO_MIGRATE"), "true")
-		if *runMigrate || autoMigrateEnv {
+		disableAutoMigrate := strings.EqualFold(os.Getenv("AUTO_MIGRATE"), "false")
+		if *runMigrate || !disableAutoMigrate {
 			if err := database.Migrate(db); err != nil {
 				log.Fatalf("Failed to run database migrations: %v", err)
 			}
@@ -39,8 +40,13 @@ func main() {
 		}
 	}
 
+	// Configure explicit HTTP timeouts and body size limit per GO-HTTP-001 and GO-HTTP-002
 	app := fiber.New(fiber.Config{
-		AppName: "FairPick API",
+		AppName:      "FairPick API",
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+		BodyLimit:    10 * 1024 * 1024, // 10 MB max request body
 	})
 
 	app.Use(recover.New())

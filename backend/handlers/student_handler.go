@@ -78,7 +78,7 @@ func (h *StudentHandler) ListStudents(c *fiber.Ctx) error {
 
 	query := h.db.Model(&models.Student{})
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		query = query.Where("student_code ILIKE ? OR full_name ILIKE ?", like, like)
 	}
 

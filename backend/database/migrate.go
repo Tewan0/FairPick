@@ -88,11 +88,11 @@ BEGIN
         );
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_courses_code_format') THEN
-        ALTER TABLE courses ADD CONSTRAINT chk_courses_code_format CHECK (
-            course_code IS NULL OR course_code ~ '^[0-9]{6}$'
-        );
-    END IF;
+    ALTER TABLE courses ALTER COLUMN course_code TYPE varchar(10);
+    ALTER TABLE courses DROP CONSTRAINT IF EXISTS chk_courses_code_format;
+    ALTER TABLE courses ADD CONSTRAINT chk_courses_code_format CHECK (
+        course_code IS NULL OR course_code ~ '^[A-Za-z0-9]{1,10}$'
+    );
 
     -- students CHECK constraints
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_students_not_empty') THEN

@@ -73,7 +73,7 @@ func (h *CourseHandler) ListCourses(c *fiber.Ctx) error {
 	query := h.db.Model(&models.Course{})
 
 	if search != "" {
-		like := "%" + search + "%"
+		like := validator.FormatSearchLike(search)
 		query = query.Where("course_code ILIKE ? OR course_name ILIKE ? OR section ILIKE ?", like, like, like)
 	}
 	if semester != "" {
@@ -114,7 +114,7 @@ func (h *CourseHandler) CreateCourse(c *fiber.Ctx) error {
 	section := validator.NormalizeOptionalString(req.Section)
 	semester := validator.NormalizeOptionalString(req.Semester)
 
-	if details := validator.ValidateCourseInput(code, name); details != nil {
+	if details := validator.ValidateCourseFields(code, name, section, semester); details != nil {
 		return response.ValidationError(c, "ข้อมูลรายวิชาไม่ถูกต้อง", details)
 	}
 
@@ -228,7 +228,7 @@ func (h *CourseHandler) UpdateCourse(c *fiber.Ctx) error {
 	section := validator.NormalizeOptionalString(req.Section)
 	semester := validator.NormalizeOptionalString(req.Semester)
 
-	if details := validator.ValidateCourseInput(code, name); details != nil {
+	if details := validator.ValidateCourseFields(code, name, section, semester); details != nil {
 		return response.ValidationError(c, "ข้อมูลรายวิชาไม่ถูกต้อง", details)
 	}
 

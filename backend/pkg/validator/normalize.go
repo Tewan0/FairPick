@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var courseCodeRegex = regexp.MustCompile(`^[0-9]{6}$`)
+var courseCodeRegex = regexp.MustCompile(`^[A-Za-z0-9]{1,10}$`)
 
 // NormalizeOptionalString trims leading/trailing whitespace and returns nil if the resulting string is empty.
 func NormalizeOptionalString(s *string) *string {
@@ -29,8 +29,32 @@ func NormalizeRequiredString(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// FormatSearchLike normalizes a search query, caps its length to prevent DoS,
+// and escapes SQL LIKE/ILIKE wildcard characters (%, _, \) per security best practices.
+func FormatSearchLike(search string) string {
+	trimmed := strings.TrimSpace(search)
+	if trimmed == "" {
+		return ""
+	}
+	runes := []rune(trimmed)
+	if len(runes) > 100 {
+		trimmed = string(runes[:100])
+	}
+	escaped := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	).Replace(trimmed)
+	return "%" + escaped + "%"
+}
+
 // ValidateCourseInput validates course fields according to docs/api-contract.md.
 func ValidateCourseInput(courseCode, courseName *string) map[string]string {
+	return ValidateCourseFields(courseCode, courseName, nil, nil)
+}
+
+// ValidateCourseFields validates courseCode (alphanumeric max 10 chars) and length bounds on course fields.
+func ValidateCourseFields(courseCode, courseName, section, semester *string) map[string]string {
 	details := make(map[string]string)
 
 	if courseCode == nil && courseName == nil {
@@ -38,7 +62,19 @@ func ValidateCourseInput(courseCode, courseName *string) map[string]string {
 	}
 
 	if courseCode != nil && !courseCodeRegex.MatchString(*courseCode) {
-		details["courseCode"] = "รหัสวิชาต้องเป็นตัวเลข 6 หลักเท่านั้น (เช่น 001101)"
+		details["courseCode"] = "รหัสวิชาต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข ไม่เกิน 10 ตัวอักษร (เช่น CS101, 001101)"
+	}
+
+	if courseName != nil && len([]rune(*courseName)) > 255 {
+		details["courseName"] = "ชื่อวิชาต้องมีความยาวไม่เกิน 255 ตัวอักษร"
+	}
+
+	if section != nil && len([]rune(*section)) > 50 {
+		details["section"] = "กลุ่มเรียน (Section) ต้องมีความยาวไม่เกิน 50 ตัวอักษร"
+	}
+
+	if semester != nil && len([]rune(*semester)) > 50 {
+		details["semester"] = "ภาคการศึกษา (Semester) ต้องมีความยาวไม่เกิน 50 ตัวอักษร"
 	}
 
 	if len(details) == 0 {

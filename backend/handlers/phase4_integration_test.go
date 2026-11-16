@@ -74,7 +74,7 @@ func TestPhase4FullEndToEndWorkflowAndDBConsistency(t *testing.T) {
 	// Step 1: สร้างรายวิชาใหม่ (พร้อมทดสอบกรณีผิดพลาด)
 	// =========================================================================
 	status, badCourseRes := doJSONRequest(t, app, http.MethodPost, "/api/courses", map[string]interface{}{
-		"courseCode": "12A",
+		"courseCode": "CS101-INVALID!",
 		"courseName": "Invalid Course Code",
 	})
 	if status != http.StatusBadRequest || badCourseRes["error"].(map[string]interface{})["code"] != "VALIDATION_ERROR" {

@@ -67,7 +67,7 @@ export interface HealthCheckDBResponse {
 
 export interface Course {
   id: number;
-  courseCode: string | null; // 6-digit string e.g. "001101" or null
+  courseCode: string | null; // Alphanumeric up to 10 chars e.g. "CS101", "001101" or null
   courseName: string | null;
   section: string | null;
   semester: string | null;
